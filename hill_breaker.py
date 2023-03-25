@@ -1,5 +1,6 @@
 import numpy as np
 import itertools
+import multiprocessing
 from tqdm import tqdm
 
 def factorize(n):
@@ -66,23 +67,33 @@ def decrypt(blocks, key):
     """Decrypt all blocks with a key."""
     return np.dot(key, blocks) % chars
 
+def try_key():
+    """One step of brute force."""
+
+def step(args):
+    """Brute force step."""
+    key_idx, rest = args
+    N, blocks, top_keys, top_scores = rest
+
+    key = np.array([(key_idx // chars**i) % chars for i in range(N)])
+    text = decrypt(blocks, key)
+    score = chi2(text)
+    
+    if (score < top_scores).any():
+        idx = np.argmax(top_scores)
+        top_scores[idx] = score
+        top_keys[idx] = key
+
 def brute_force(blocks, N):
     """Brute force the keys for a given N."""
-    top_keys = [None for _ in range(N)]
-    top_scores = np.array([100000000 for _ in range(N)])
+    top_keys = multiprocessing.Array('i', [-1 for _ in range(N)])
+    top_scores = multiprocessing.Array('i', [100000000 for _ in range(N)])
 
-    for key_idx in tqdm(range(chars**N)):
-        key = np.array([(key_idx // chars**i) % (chars-1) for i in range(N)])
-        text = decrypt(blocks, key)
-        score = chi2(text)
-
-        if (score < top_scores).any():
-            idx = np.argmax(top_scores)
-            top_scores[idx] = score
-            top_keys[idx] = key
+    with multiprocessing.Pool(16) as p:
+        p.map(step, zip(range(chars**N), itertools.repeat((N, blocks, top_keys, top_scores))))
 
     for key in top_keys:
-        if key is None:
+        if key == -1:
             return None, None
 
     list1, list2 = zip(*sorted(zip(top_scores, top_keys)))
